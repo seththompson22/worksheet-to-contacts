@@ -163,8 +163,8 @@ def main():
         else:
             print(f'Creating contact for: {person.name}')
             # Uncomment the line below to create the contact
-            # created_contact = create_contact(service, person)
-            # print(f'Contact {person.name} created with resourceName: {created_contact.get("resourceName")}')
+            created_contact = create_contact(service, person)
+            print(f'Contact {person.name} created with resourceName: {created_contact.get("resourceName")}')
 
 
 if __name__ == '__main__':
