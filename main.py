@@ -38,9 +38,11 @@ def read_spreadsheet():
     # Initialize list to store contacts from sheet
     contacts_from_sheet = []
     # Iterate through rows to fetch contacts
-    for idx in range(1, 42):
+    for idx in range(2, 42):
         row = sheet.row_values(idx)
         print(row)
+        if len(row) < 5:  # Ensure row has at least 5 columns
+            continue
         name = row[1]
         email = row[3]
         phone_number = row[4]
@@ -56,8 +58,8 @@ CLIENT_SECRETS_FILE = 'people_credentials.json'
 # Function to normalize phone number
 def normalize_phone_number(phone_number):
     normalized_number = re.sub(r'\D', '', phone_number)  # Remove non-digit characters
-    if normalized_number.startswith('1'):
-        normalized_number = normalized_number[1:]  # Remove leading '1' (country code for USA)
+    if len(normalized_number) > 10:
+        normalized_number = normalized_number[-10:]  # Remove leading digits for internation numbers
     return normalized_number
 
 # Function to get authenticated credentials
@@ -67,7 +69,10 @@ def get_credentials():
     # created automatically when the authorization flow completes for the first
     # time.
     if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json')
+        try:
+            creds = Credentials.from_authorized_user_file('token.json')
+        except ValueError:
+            creds = None  # Handle error gracefully
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -137,13 +142,16 @@ def search_contact_by_criteria(service, name=None, email=None, phone=None):
 
 # Function to create a new contact
 def create_contact(service, person):
-    contact = {
-        'names': [{'displayName': person.name}],
-        'phoneNumbers': [{'value': person.phone_number}],
-        'emailAddresses': [{'value': person.email}]
-    }
-
-    created_contact = service.people().createContact(body=contact).execute()
+    try:
+        contact = {
+            'names': [{'displayName': person.name}],
+            'phoneNumbers': [{'value': person.phone_number}],
+            'emailAddresses': [{'value': person.email}]
+        }
+        created_contact = service.people().createContact(body=contact).execute()
+        print(f"Contact {person.name} created with resourceName: {created_contact.get('resourceName')}")
+    except Exception as e:
+        print(f"Failed to create contact for {person.name}: {e}")
     return created_contact
 
 # Main function to run the script
