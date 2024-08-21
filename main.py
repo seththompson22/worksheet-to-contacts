@@ -7,6 +7,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/contacts']
+CLIENT_SECRETS_FILE = 'credentials.json'
+
+
 # Person class to represent each contact
 class Person:
     def __init__(self, name, phone_number, email):
@@ -15,15 +19,13 @@ class Person:
         self.email = email
 
 def read_spreadsheet():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets"
-    ]
-    creds = service_account.Credentials.from_service_account_file("credentials.json", scopes=scopes)
+    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+    creds = flow.run_local_server(port=0)
     client = gspread.authorize(creds)
 
     # Get the ID of the sheet to access the document
     with open('sheets_contacts_test_id.txt', 'r') as file:
-        sheet_id = file.read()
+        sheet_id = file.read().strip()
     
     # Open the workbook by its ID
     workbook = client.open_by_key(sheet_id)
@@ -38,7 +40,7 @@ def read_spreadsheet():
     # Initialize list to store contacts from sheet
     contacts_from_sheet = []
     # Iterate through rows to fetch contacts
-    for idx in range(2, 42):
+    for idx in range(2, sheet.row_count + 1):
         row = sheet.row_values(idx)
         print(row)
         if len(row) < 5:  # Ensure row has at least 5 columns
@@ -51,9 +53,7 @@ def read_spreadsheet():
 
     return contacts_from_sheet
 
-# Define the scopes and credentials file path
-SCOPES = ['https://www.googleapis.com/auth/contacts']
-CLIENT_SECRETS_FILE = 'people_credentials.json'
+
 
 # Function to normalize phone number
 def normalize_phone_number(phone_number):
@@ -72,6 +72,7 @@ def get_credentials():
         try:
             creds = Credentials.from_authorized_user_file('token.json')
         except ValueError:
+            print("Could not access credentials from token.json")
             creds = None  # Handle error gracefully
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
@@ -171,7 +172,7 @@ def main():
         else:
             print(f'Creating contact for: {person.name}')
             # Uncomment the line below to create the contact
-            created_contact = create_contact(service, person)
+            # created_contact = create_contact(service, person)
             print(f'Contact {person.name} created with resourceName: {created_contact.get("resourceName")}')
 
 
