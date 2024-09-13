@@ -18,6 +18,14 @@ class Person:
         self.phone_number = phone_number
         self.email = email
 
+# Contact_Copy class holds the current values for a Person that needs update (copy of state from Google Contacts)
+class Contact_Copy:
+    def __init__(self, name, phone_number, email):
+        self.name = name
+        self.phone_number = phone_number
+        self.email = email
+
+
 def read_spreadsheet():
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
     creds = flow.run_local_server(port=0)
@@ -112,7 +120,6 @@ def search_contact_by_criteria(service, name, phone, email):
         matches_email = not email or email.lower() in person_emails
         matches_phone = not phone or phone in person_phones
 
-        # if matches_name or matches_email or matches_phone:
         if matches_email:
             found_contacts.append(person)
 
@@ -160,16 +167,19 @@ def main():
     # for i, per in enumerate(people_to_add):
     #     print(f"Row Number: {i+2}, Name: {per.name}, Email: {per.email}")
 
-    # Search or create contacts based on Google Sheet data
+    # Search for contacts based on Google Sheet data
     for person in people_to_add:
         existing_contact = search_contact_by_criteria(service, person.name, person.phone_number, person.email)
-        # if existing_contact:
-        #     print(f'Contact {person.name} already exists with resourceName: {existing_contact[0].get("resourceName")}')
+        if existing_contact:
+            print(f'Contact {person.name} already exists with resourceName: {existing_contact[0].get("resourceName")}')
         # else:
         #     print(f'Creating contact for: {person.name}')
         #     # Uncomment the line below to create the contact
         #     #created_contact = create_contact(service, person)
         #     print(f'Contact {person.name} created with resourceName: {created_contact.get("resourceName")}')
+    # two lists of people to modify with one sheet
+    #   List A: Unknown Names, Unknown Numbers --> check all contacts if contains first or last name (cross reference with number to match)
+    #   List B: Known Names, has a number --> check if number matches (true => done, false => update/add to contact)
 
 
 if __name__ == '__main__':
