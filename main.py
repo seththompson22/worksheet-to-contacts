@@ -19,13 +19,6 @@ class Person:
         self.email = email
         self.phone_number = phone_number
 
-# Contact_Copy class holds the current values for a Person that needs update (copy of state from Google Contacts)
-class Contact_Copy:
-    def __init__(self, name, email,phone_number):
-        self.name = name
-        self.email = email
-        self.phone_number = phone_number
-
 
 def read_spreadsheet():
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
@@ -68,7 +61,11 @@ def normalize_phone_number(phone_number):
     normalized_number = re.sub(r'\D', '', phone_number)  # Remove non-digit characters
     if len(normalized_number) > 10:
         normalized_number = normalized_number[-10:]  # Remove leading digits for internation numbers
-    return normalized_number
+    # add back in characters and digits as (123) 392-1343
+    normalized_index = 0
+    formatted_number = f"({normalized_number[:3]}) {normalized_number[3:6]}-{normalized_number[6:]}"
+    
+    return formatted_number
 
 # Function to get authenticated credentials
 def get_credentials():
@@ -113,20 +110,20 @@ def search_contact_by_criteria(service, contacts_to_search):
     found_contacts = []
     contacts_to_generate = []
     for i, person in enumerate(contacts_to_search):
-        person_email = person.email
+        person_email = person.email.strip().lower()
         person_number = person.phone_number
-        person_name = person.name
+        person_name = person.name.strip().lower()
 
         for connection in connections:
-            connection_name = connection.get('names', [{}])[0].get('displayName', '').lower()
-            connection_emails = [email['value'].lower() for email in connection.get('emailAddresses', [])]
+            connection_name = connection.get('names', [{}])[0].get('displayName', '').strip().lower()
+            connection_emails = [email['value'].strip().lower() for email in connection.get('emailAddresses', [])]
             connection_phones = [phone['value'] for phone in connection.get('phoneNumbers', [])]
 
             is_contact_found = False
 
             # Check if the contact matches the criteria
             # matches_name = not name or name.lower() in person_name
-            matches_email = person_email and person_email.lower() in connection_emails
+            matches_email = person_email and person_email.strip().lower() in connection_emails
             # matches_phone = not phone or phone in person_phones
 
             if matches_email:
@@ -135,7 +132,7 @@ def search_contact_by_criteria(service, contacts_to_search):
                 break
 
         if not is_contact_found:
-            contacts_to_generate.append(Person(person_name, person_email, person_number))
+            contacts_to_generate.append(Person(person_name, person_email, normalize_phone_number(person_number)))
             print(f"No contacts found matching the criteria. Name - {person_email}")
 
     if found_contacts:
@@ -150,25 +147,68 @@ def search_contact_by_criteria(service, contacts_to_search):
 
             phone_numbers = person.get('phoneNumbers', [])
             phone = phone_numbers[0].get('value', 'Unknown') if phone_numbers else 'Unknown'
-
+            phone = normalize_phone_number(phone)
             print(f'{name} - {email} - {phone}')
     else:
         print('No matching contacts found.')
 
     return found_contacts, contacts_to_generate
 
-# Function to create a new contact
-def create_contact(service, person):
-    try:
-        contact = {
-            'names': [{'displayName': person.name}],
-            'phoneNumbers': [{'value': person.phone_number}],
-            'emailAddresses': [{'value': person.email}]
-        }
-        created_contact = service.people().createContact(body=contact).execute()
-        print(f"Contact {person.name} created with resourceName: {created_contact.get('resourceName')}")
-    except Exception as e:
-        print(f"Failed to create contact for {person.name}: {e}")
+def update_contacts(service, contacts_to_update, contacts_from_sheet):
+    for contact in contacts_to_update:
+        contact_resource_name = contact.get('resourceName')
+        current_name = contact.get('names', [{}])[0].get('displayName', 'Unknown')
+        current_email = contact.get('emailAddresses', [{}])[0].get('value', 'Unknown')
+        current_phone_number = contact.get('phoneNumbers', [{}])[0].get('value', 'Unknown')
+
+        corresponding_contact = None
+        for p in contacts_from_sheet:
+            if p.email == current_email:
+                corresponding_contact = p
+                break
+        
+        if corresponding_contact:
+            needs_update = False
+            updated_info = {}
+
+            if corresponding_contact.name.strip().lower() != current_name.strip().lower():
+                needs_update = True
+                updated_info['names'] = [{'displayNames': corresponding_contact.name}]
+            
+            
+            corresponding_contact.phone_number = normalize_phone_number(corresponding_contact.phone_number)
+            if corresponding_contact.phone_number != normalize_phone_number(current_phone_number):
+                needs_update = True
+                updated_info['phoneNumbers'] = [{'value': corresponding_contact.phone_number}]
+        
+            if needs_update:
+                try:
+                    service.people().updateContact(
+                        resourceName=contact_resource_name,
+                        updatePersonFields='names,phoneNumbers',
+                        body=updated_info
+                    ).execute()
+                    print(f"Updated Contact {current_name} {current_email}")
+                except Exception as e:
+                    print(f"Failed to update contact {current_name}: {e}")
+            else:
+                print(f"No updates needed for contact {current_name} ({current_email})")
+        else:
+            print(f"Corresponding contact for {current_email} not found in the sheet.")
+
+# Function to create a new contacts
+def generate_contacts(service, contacts):
+    for person in contacts:
+        try:
+            contact = {
+                'names': [{'displayName': person.name}],
+                'phoneNumbers': [{'value': person.phone_number}],
+                'emailAddresses': [{'value': person.email}]
+            }
+            created_contact = service.people().createContact(body=contact).execute()
+            print(f"Contact {person.name} created with resourceName: {created_contact.get('resourceName')}")
+        except Exception as e:
+            print(f"Failed to create contact for {person.name}: {e}")
     return created_contact
 
 # Main function to run the script
@@ -190,12 +230,14 @@ def main():
     #   where contacts_to_generate U B --- contacts_to_check
 
     # Read contacts from Google Sheet
-    contacts_to_check = read_spreadsheet() # searched by email because of UDEL directory
+    contacts_from_sheet = read_spreadsheet() # searched by email because of UDEL directory
 
-    contacts_to_update, contacts_to_generate = search_contact_by_criteria(service, contacts_to_check)  
+    contacts_to_update, contacts_to_generate = search_contact_by_criteria(service, contacts_from_sheet)  
     # contacts_to_update: Subset of contacts_to_check => list of contacts that need updated names/numbers
     # contacts_to_generate: Subset of contacts_to_check => list of contacts that need to be created
-
+    
+    # update_contacts(service, contacts_to_update, contacts_from_sheet)
+    # generate_contacts(service, contacts_to_generate)
 
     # print(f'Contact {person.name}, {person.email} already exists with resourceName: {existing_contact[0].get("resourceName")}')
 
