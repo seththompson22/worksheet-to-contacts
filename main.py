@@ -40,7 +40,7 @@ def read_spreadsheet():
     # Initialize list to store contacts from sheet
     contacts_from_sheet = []
     # Iterate through rows to fetch contacts
-    for idx in range(2, sheet.row_count + 1):
+    for idx in range(2, 52):
         row = sheet.row_values(idx)
         print(row)
         if len(row) < 5:  # Ensure row has at least 5 columns
@@ -52,7 +52,6 @@ def read_spreadsheet():
         contacts_from_sheet.append(Person(name, phone_number, email))
 
     return contacts_from_sheet
-
 
 
 # Function to normalize phone number
@@ -88,7 +87,7 @@ def get_credentials():
 
     return creds
 
-def search_contact_by_criteria(service, name=None, email=None, phone=None):
+def search_contact_by_criteria(service, name, phone, email):
     results = service.people().connections().list(
         resourceName='people/me',
         pageSize=1000,
@@ -108,34 +107,29 @@ def search_contact_by_criteria(service, name=None, email=None, phone=None):
         person_emails = [email['value'].lower() for email in person.get('emailAddresses', [])]
         person_phones = [phone['value'] for phone in person.get('phoneNumbers', [])]
 
-        # Check if the contact matches the name and optionally the email or phone
-        if (name and name.lower() in person_name) and \
-           ((not email or email.lower() in person_emails) or \
-            (not phone or phone in person_phones)):
+        # Check if the contact matches the criteria
+        matches_name = not name or name.lower() in person_name
+        matches_email = not email or email.lower() in person_emails
+        matches_phone = not phone or phone in person_phones
+
+        # if matches_name or matches_email or matches_phone:
+        if matches_email:
             found_contacts.append(person)
 
     if not found_contacts:
-        print('No contacts found matching the criteria.')
+        print(f"No contacts found matching the criteria. Name - {name}")
     else:
         print('Contacts found:')
         for person in found_contacts:
             names = person.get('names', [])
-            if names:
-                name = names[0].get('displayName', 'Unknown')
-            else:
-                name = 'Unknown'
+            name = names[0].get('displayName', 'Unknown') if names else 'Unknown'
 
             email_addresses = person.get('emailAddresses', [])
-            if email_addresses:
-                email = email_addresses[0].get('value', 'Unknown')
-            else:
-                email = 'Unknown'
+            email = email_addresses[0].get('value', 'Unknown') if email_addresses else 'Unknown'
+
 
             phone_numbers = person.get('phoneNumbers', [])
-            if phone_numbers:
-                phone = phone_numbers[0].get('value', 'Unknown')
-            else:
-                phone = 'Unknown'
+            phone = phone_numbers[0].get('value', 'Unknown') if phone_numbers else 'Unknown'
 
             print(f'{name} - {email} - {phone}')
 
@@ -162,18 +156,20 @@ def main():
     service = build('people', 'v1', credentials=creds)
 
     # Read contacts from Google Sheet
-    persons = read_spreadsheet()
+    people_to_add = read_spreadsheet()
+    # for i, per in enumerate(people_to_add):
+    #     print(f"Row Number: {i+2}, Name: {per.name}, Email: {per.email}")
 
     # Search or create contacts based on Google Sheet data
-    for person in persons:
-        existing_contact = search_contact_by_criteria(service, person.name, person.email, person.phone_number)
-        if existing_contact:
-            print(f'Contact {person.name} already exists with resourceName: {existing_contact[0].get("resourceName")}')
-        else:
-            print(f'Creating contact for: {person.name}')
-            # Uncomment the line below to create the contact
-            # created_contact = create_contact(service, person)
-            print(f'Contact {person.name} created with resourceName: {created_contact.get("resourceName")}')
+    for person in people_to_add:
+        existing_contact = search_contact_by_criteria(service, person.name, person.phone_number, person.email)
+        # if existing_contact:
+        #     print(f'Contact {person.name} already exists with resourceName: {existing_contact[0].get("resourceName")}')
+        # else:
+        #     print(f'Creating contact for: {person.name}')
+        #     # Uncomment the line below to create the contact
+        #     #created_contact = create_contact(service, person)
+        #     print(f'Contact {person.name} created with resourceName: {created_contact.get("resourceName")}')
 
 
 if __name__ == '__main__':
