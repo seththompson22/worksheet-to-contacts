@@ -1,3 +1,4 @@
+import time
 import gspread
 import os
 import re
@@ -13,17 +14,17 @@ CLIENT_SECRETS_FILE = 'credentials.json'
 
 # Person class to represent each contact
 class Person:
-    def __init__(self, name, phone_number, email):
+    def __init__(self, name, email, phone_number):
         self.name = name
-        self.phone_number = phone_number
         self.email = email
+        self.phone_number = phone_number
 
 # Contact_Copy class holds the current values for a Person that needs update (copy of state from Google Contacts)
 class Contact_Copy:
-    def __init__(self, name, phone_number, email):
+    def __init__(self, name, email,phone_number):
         self.name = name
-        self.phone_number = phone_number
         self.email = email
+        self.phone_number = phone_number
 
 
 def read_spreadsheet():
@@ -57,7 +58,7 @@ def read_spreadsheet():
         email = row[3]
         phone_number = row[4]
         
-        contacts_from_sheet.append(Person(name, phone_number, email))
+        contacts_from_sheet.append(Person(name, email, phone_number))
 
     return contacts_from_sheet
 
@@ -95,7 +96,7 @@ def get_credentials():
 
     return creds
 
-def search_contact_by_criteria(service, name, phone, email):
+def search_contact_by_criteria(service, contacts_to_search):    
     results = service.people().connections().list(
         resourceName='people/me',
         pageSize=1000,
@@ -110,22 +111,34 @@ def search_contact_by_criteria(service, name, phone, email):
         return []
 
     found_contacts = []
-    for person in connections:
-        person_name = person.get('names', [{}])[0].get('displayName', '').lower()
-        person_emails = [email['value'].lower() for email in person.get('emailAddresses', [])]
-        person_phones = [phone['value'] for phone in person.get('phoneNumbers', [])]
+    contacts_to_generate = []
+    for i, person in enumerate(contacts_to_search):
+        person_email = person.email
+        person_number = person.phone_number
+        person_name = person.name
 
-        # Check if the contact matches the criteria
-        matches_name = not name or name.lower() in person_name
-        matches_email = not email or email.lower() in person_emails
-        matches_phone = not phone or phone in person_phones
+        for connection in connections:
+            connection_name = connection.get('names', [{}])[0].get('displayName', '').lower()
+            connection_emails = [email['value'].lower() for email in connection.get('emailAddresses', [])]
+            connection_phones = [phone['value'] for phone in connection.get('phoneNumbers', [])]
 
-        if matches_email:
-            found_contacts.append(person)
+            is_contact_found = False
 
-    if not found_contacts:
-        print(f"No contacts found matching the criteria. Name - {name}")
-    else:
+            # Check if the contact matches the criteria
+            # matches_name = not name or name.lower() in person_name
+            matches_email = person_email and person_email.lower() in connection_emails
+            # matches_phone = not phone or phone in person_phones
+
+            if matches_email:
+                found_contacts.append(connection)
+                is_contact_found = True
+                break
+
+        if not is_contact_found:
+            contacts_to_generate.append(Person(person_name, person_email, person_number))
+            print(f"No contacts found matching the criteria. Name - {person_email}")
+
+    if found_contacts:
         print('Contacts found:')
         for person in found_contacts:
             names = person.get('names', [])
@@ -139,8 +152,10 @@ def search_contact_by_criteria(service, name, phone, email):
             phone = phone_numbers[0].get('value', 'Unknown') if phone_numbers else 'Unknown'
 
             print(f'{name} - {email} - {phone}')
+    else:
+        print('No matching contacts found.')
 
-    return found_contacts
+    return found_contacts, contacts_to_generate
 
 # Function to create a new contact
 def create_contact(service, person):
@@ -161,26 +176,28 @@ def main():
     creds = get_credentials()
 
     service = build('people', 'v1', credentials=creds)
+    # warmup query
+    response = service.people().searchContacts(
+    query="",
+    readMask="names,emailAddresses"
+    ).execute()
+    
+    # Wait for a few seconds
+    time.sleep(5)
+
+    # two lists of people to modify with one sheet
+    #   contacts_to_check: List of all contacts that might need updated pulled from google sheet
+    #   where contacts_to_generate U B --- contacts_to_check
 
     # Read contacts from Google Sheet
-    people_to_add = read_spreadsheet()
-    # for i, per in enumerate(people_to_add):
-    #     print(f"Row Number: {i+2}, Name: {per.name}, Email: {per.email}")
+    contacts_to_check = read_spreadsheet() # searched by email because of UDEL directory
 
-    # Search for contacts based on Google Sheet data
-    for person in people_to_add:
-        existing_contact = search_contact_by_criteria(service, person.name, person.phone_number, person.email)
-        if existing_contact:
-            print(f'Contact {person.name} already exists with resourceName: {existing_contact[0].get("resourceName")}')
-        # else:
-        #     print(f'Creating contact for: {person.name}')
-        #     # Uncomment the line below to create the contact
-        #     #created_contact = create_contact(service, person)
-        #     print(f'Contact {person.name} created with resourceName: {created_contact.get("resourceName")}')
-    # two lists of people to modify with one sheet
-    #   List A: Unknown Names, Unknown Numbers --> check all contacts if contains first or last name (cross reference with number to match)
-    #   List B: Known Names, has a number --> check if number matches (true => done, false => update/add to contact)
+    contacts_to_update, contacts_to_generate = search_contact_by_criteria(service, contacts_to_check)  
+    # contacts_to_update: Subset of contacts_to_check => list of contacts that need updated names/numbers
+    # contacts_to_generate: Subset of contacts_to_check => list of contacts that need to be created
 
+
+    # print(f'Contact {person.name}, {person.email} already exists with resourceName: {existing_contact[0].get("resourceName")}')
 
 if __name__ == '__main__':
     main()
