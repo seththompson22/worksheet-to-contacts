@@ -160,6 +160,11 @@ def update_contacts(service, contacts_to_update, contacts_from_sheet):
         current_name = contact.get('names', [{}])[0].get('displayName', 'Unknown')
         current_email = contact.get('emailAddresses', [{}])[0].get('value', 'Unknown')
         current_phone_number = contact.get('phoneNumbers', [{}])[0].get('value', 'Unknown')
+        contact_etag = contact.get('etag')  # Retrieve the etag
+
+        if not contact_etag:
+            print(f"Missing etag for contact {current_name} ({current_email}). Skipping update.")
+            continue
 
         corresponding_contact = None
         for p in contacts_from_sheet:
@@ -169,17 +174,20 @@ def update_contacts(service, contacts_to_update, contacts_from_sheet):
         
         if corresponding_contact:
             needs_update = False
-            updated_info = {}
+            updated_info = {
+                'etag': contact_etag  # Include the etag in the update request
+            }
 
             if corresponding_contact.name.strip().lower() != current_name.strip().lower():
                 needs_update = True
-                updated_info['names'] = [{'displayNames': corresponding_contact.name}]
+                updated_info['names'] = [{'displayName': corresponding_contact.name}]
             
             
             corresponding_contact.phone_number = normalize_phone_number(corresponding_contact.phone_number)
-            if corresponding_contact.phone_number != normalize_phone_number(current_phone_number):
-                needs_update = True
-                updated_info['phoneNumbers'] = [{'value': corresponding_contact.phone_number}]
+            if current_phone_number != 'Unknown':
+                if corresponding_contact.phone_number != normalize_phone_number(current_phone_number):
+                    needs_update = True
+                    updated_info['phoneNumbers'] = [{'value': corresponding_contact.phone_number}]
         
             if needs_update:
                 try:
@@ -188,7 +196,7 @@ def update_contacts(service, contacts_to_update, contacts_from_sheet):
                         updatePersonFields='names,phoneNumbers',
                         body=updated_info
                     ).execute()
-                    print(f"Updated Contact {current_name} {current_email}")
+                    print(f"Updated Contact {current_name} ({current_email})")
                 except Exception as e:
                     print(f"Failed to update contact {current_name}: {e}")
             else:
@@ -198,18 +206,28 @@ def update_contacts(service, contacts_to_update, contacts_from_sheet):
 
 # Function to create a new contacts
 def generate_contacts(service, contacts):
+    created_contacts = []
+
     for person in contacts:
         try:
-            contact = {
-                'names': [{'displayName': person.name}],
-                'phoneNumbers': [{'value': person.phone_number}],
-                'emailAddresses': [{'value': person.email}]
-            }
-            created_contact = service.people().createContact(body=contact).execute()
-            print(f"Contact {person.name} created with resourceName: {created_contact.get('resourceName')}")
+            contact = {}
+
+            if person.name:
+                contact['names'] = [{'displayName': person.name}]
+            
+            if person.email:
+                contact['emailAddresses'] = [{'value': person.email}]
+
+            if person.phone_number:
+                contact['phoneNumbers'] = [{'value': person.phone_number}]
+
+            if contact:
+                created_contact = service.people().createContact(body=contact).execute()
+                created_contacts.append(created_contacts)
+                print(f"Contact {person.name} created with resourceName: {created_contact.get('resourceName')}")
         except Exception as e:
             print(f"Failed to create contact for {person.name}: {e}")
-    return created_contact
+    return created_contacts
 
 # Main function to run the script
 def main():
@@ -236,8 +254,8 @@ def main():
     # contacts_to_update: Subset of contacts_to_check => list of contacts that need updated names/numbers
     # contacts_to_generate: Subset of contacts_to_check => list of contacts that need to be created
     
-    # update_contacts(service, contacts_to_update, contacts_from_sheet)
-    # generate_contacts(service, contacts_to_generate)
+    update_contacts(service, contacts_to_update, contacts_from_sheet)
+    generate_contacts(service, contacts_to_generate)
 
     # print(f'Contact {person.name}, {person.email} already exists with resourceName: {existing_contact[0].get("resourceName")}')
 
