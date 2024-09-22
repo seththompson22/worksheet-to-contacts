@@ -219,7 +219,7 @@ def generate_contacts(service, contacts):
                 contact['emailAddresses'] = [{'value': person.email}]
 
             if person.phone_number:
-                contact['phoneNumbers'] = [{'value': person.phone_number}]
+                person['phoneNumbers'] = [{'value': person.phone_number}]
 
             if contact:
                 created_contact = service.people().createContact(body=contact).execute()
